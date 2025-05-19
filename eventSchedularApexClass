@@ -1,0 +1,48 @@
+public class EventSchedulerController {
+	@AuraEnabled(cacheable=true)
+	public static List<Event__c> getUpcomingEvents() {
+        return [SELECT Id, Name, Event_Date__c, Capacity__c, Allow_Waitlist__c 
+                FROM Event__c 
+                WHERE Event_Date__c >= :Date.today()
+                ORDER BY Event_Date__c ASC];
+    }
+
+    @AuraEnabled
+    public static String registerAttendee(Id eventId, Id contactId, String notes) {
+        if (eventId == null || contactId == null) 
+		return 'Invalid Input';
+
+        
+        List<Event_Attendee__c> existing = [SELECT Id FROM Event_Attendee__c 
+                                            WHERE Event__c = :eventId AND Contact__c = :contactId];
+        if (!existing.isEmpty()) {
+            return 'Duplicate';
+        }
+
+        Event__c eventRec = [SELECT Capacity__c, Allow_Waitlist__c,
+                             (SELECT Id FROM Event_Attendees__r) FROM Event__c WHERE Id = :eventId];
+
+        Integer registeredCount = [SELECT Count() FROM Event_Attendee__c 
+                                   WHERE Event__c = :eventId AND Status__c = 'Registered'];
+
+        String status = 'Registered';
+        if (registeredCount >= eventRec.Capacity__c) {
+            if (eventRec.Allow_Waitlist__c) {
+                status = 'Waitlisted';
+            } else {
+                return 'Full';
+            }
+        }
+
+        Event_Attendee__c attendee = new Event_Attendee__c(
+            Event__c = eventId,
+            Contact__c = contactId,
+            Notes__c = notes,
+            Status__c = status,
+            Registered_On__c = System.now()
+        );
+        insert attendee;
+
+        return status;
+    }
+}
