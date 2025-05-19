@@ -1,0 +1,98 @@
+HTML File for task
+<template>
+    
+    <lightning-card variant="Narrow"  title="Event Scheduler" icon-name="standard:account">
+        <lightning-button-icon  icon-name="utility:down" variant="border-filled" alternative-text="Show More" slot="actions"></lightning-button-icon>
+        <div class="slds-p-around_medium">
+            <lightning-combobox
+                name="event"
+                label="Select Event"
+                value={selectedEvent}
+                options={eventOptions}
+                onchange={handleEventChange}
+                required>
+            </lightning-combobox>
+
+            <lightning-record-edit-form object-api-name="Event_Attendee__c">
+                <lightning-input-field field-name="Contact__c" onchange={handleContactChange} required>
+                </lightning-input-field>
+            </lightning-record-edit-form>
+
+            <lightning-textarea label="Notes" value={notes} onchange={handleNotesChange} required></lightning-textarea><br>
+
+            <lightning-button variant="brand" label="Register" onclick={handleSubmit}></lightning-button>
+        </div>
+    </lightning-card>
+</template>
+
+
+JS File for Task
+
+
+import { LightningElement,track, wire } from 'lwc';
+import getUpcomingEvents from '@salesforce/apex/EventSchedulerController.getUpcomingEvents';
+import registerAttendee from '@salesforce/apex/EventSchedulerController.registerAttendee';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+export default class EventScheduler extends LightningElement {
+
+    @track eventOptions = [];
+    @track selectedEvent;
+    contactId = '';
+    notes = '';
+
+    @wire(getUpcomingEvents)
+    wiredEvents({ error, data }) {
+        if (data) {
+            this.eventOptions = data.map(ev => ({
+                label: ev.Name ,
+                value: ev.Id
+            }));
+        } else if (error) {
+            this.showToast('Error', 'Error fetching events', 'error');
+        }
+    }
+
+    handleEventChange(event) {
+        this.selectedEvent = event.detail.value;
+    }
+
+    handleContactChange(event) {
+        this.contactId = event.target.value;
+        console.log('Selected Contact Id:', this.contactId);
+    }
+
+    handleNotesChange(event) {
+        this.notes = event.detail.value;
+    }
+
+    handleSubmit() {
+        if (!this.selectedEvent || !this.contactId || !this.notes) {
+            this.showToast('Validation Error', 'All fields are required.', 'warning');
+            return;
+        }
+
+        registerAttendee({ eventId: this.selectedEvent, contactId: this.contactId, notes: this.notes })
+            .then(result => {
+                if (result === 'Registered') {
+                    this.showToast('Success', 'Contact successfully registered!', 'success');
+                } else if (result === 'Waitlisted') {
+                    this.showToast('Info', 'Event is full. Contact has been waitlisted.', 'info');
+                } else if (result === 'Full') {
+                    this.showToast('Error', 'Event has reached full capacity.', 'error');
+                } else if (result === 'Duplicate') {
+                    this.showToast('Warning', 'Contact is already registered for this event.', 'warning');
+                }
+            })
+            .catch(error => {
+                this.showToast('Error', 'Something went wrong: ' + error.body.message, 'error');
+            });
+    }
+
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({
+            title: title,
+            message: message,
+            variant: variant
+        }));
+    }
+}
