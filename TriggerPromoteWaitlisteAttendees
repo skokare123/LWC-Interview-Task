@@ -1,0 +1,42 @@
+trigger WaitlistedAttendeesPromote on Event__c (After update) {
+     List<Id> updatedEventIds = new List<Id>();
+    for (Event__c newEvent : Trigger.new) {
+        Event__c oldEvent = Trigger.oldMap.get(newEvent.Id);
+        if (newEvent.Capacity__c > oldEvent.Capacity__c) {
+            updatedEventIds.add(newEvent.Id);
+        }
+    }
+
+    Map<Id, Event__c> eventMap = new Map<Id, Event__c>(
+        [SELECT Id, Capacity__c,(SELECT Id, Status__c, Registered_On__c FROM Event_Attendees__r 
+             WHERE Status__c IN ('Registered', 'Waitlisted')ORDER BY Registered_On__c ASC)
+         FROM Event__c WHERE Id IN :updatedEventIds]);
+
+    List<Event_Attendee__c> attendeesToUpdate = new List<Event_Attendee__c>();
+
+    for (Event__c ev : eventMap.values()) {
+        List<Event_Attendee__c> registered = new List<Event_Attendee__c>();
+        List<Event_Attendee__c> waitlisted = new List<Event_Attendee__c>();
+
+        for (Event_Attendee__c att : ev.Event_Attendees__r) {
+            if (att.Status__c == 'Registered') {
+                registered.add(att);
+            } else if (att.Status__c == 'Waitlisted') {
+                waitlisted.add(att);
+            }
+        }
+
+        decimal availableSlots = ev.Capacity__c - registered.size();
+        decimal slotsToFill = Math.min(availableSlots, waitlisted.size());
+
+        for (Integer i = 0; i < slotsToFill; i++) {
+            Event_Attendee__c toPromote = waitlisted[i];
+            toPromote.Status__c = 'Registered';
+            attendeesToUpdate.add(toPromote);
+        }
+    }
+
+    if (!attendeesToUpdate.isEmpty()) {
+        update attendeesToUpdate;
+    }
+}
